@@ -19,7 +19,7 @@ interface Player {
   bulletSize: number // 子弹大小倍数（影响伤害）
   fireRate: number   // 射击间隔（毫秒）
   bulletCount: number // 同时发射的子弹数量
-  lastShot: number   // 上次射击时间戳
+  lastShot: number   // 上次射击时间
 }
 
 /**
@@ -78,9 +78,9 @@ interface Explosion {
 
 /**
  * 游戏状态类型
- * 定义游戏的四种状态
+ * 定义游戏的五种状态
  */
-type GameState = 'start' | 'playing' | 'paused' | 'gameover'
+type GameState = 'menu' | 'playing' | 'paused' | 'gameover' | 'history'
 
 // 游戏画布常量
 const CANVAS_WIDTH = 600   // 画布宽度
@@ -89,17 +89,27 @@ const CANVAS_HEIGHT = 800  // 画布高度
 /**
  * 飞机大战主组件
  * 使用Canvas实现2D射击游戏
+ * 支持桌面端（键盘）和移动端（虚拟方向键）
  */
 export default function PlaneGame() {
   // Canvas引用
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   // 游戏状态管理
-  const [gameState, setGameState] = useState<GameState>('start') // 当前游戏状态
+  const [gameState, setGameState] = useState<GameState>('menu') // 当前游戏状态
   const [score, setScore] = useState(0)           // 当前分数
   const [highScore, setHighScore] = useState(0)   // 历史最高分
   const [health, setHealth] = useState(100)         // 玩家生命值
   const [isNewRecord, setIsNewRecord] = useState(false) // 是否新纪录
+
+  // 移动端检测
+  const [isMobile, setIsMobile] = useState(false) // 是否移动端设备
+  const [touchControls, setTouchControls] = useState({
+    up: false,
+    down: false,
+    left: false,
+    right: false
+  }) // 虚拟方向键状态
 
   // 游戏循环引用
   const gameLoopRef = useRef<number>()
@@ -125,19 +135,42 @@ export default function PlaneGame() {
   const powerUpsRef = useRef<PowerUp[]>([])   // 道具数组
   const explosionsRef = useRef<Explosion[]>([]) // 爆炸特效数组
 
-  // 键盘输入状态跟踪
+  // 输入状态跟踪
   const keysRef = useRef<{ [key: string]: boolean }>({})
 
   /**
+   * 检测移动端设备
+   */
+  useEffect(() => {
+    const checkMobile = () => {
+      const userAgent = navigator.userAgent || navigator.vendor
+      const isMobileDevice = /android|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase())
+      const hasTouchScreen = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+      setIsMobile(isMobileDevice || hasTouchScreen)
+    }
+
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
+  /**
    * 从API获取历史最高分
-   * 在游戏启动时调用
+   * 在主界面和历史记录界面调用
    */
   const fetchHighScore = useCallback(async () => {
     try {
+      console.log('=== Fetching high score ===')
       const response = await fetch('/api/highscore')
+      console.log('Response status:', response.status)
       const data = await response.json()
+      console.log('High score response:', data)
       if (data.success) {
         setHighScore(data.highScore)
+        console.log('High score set to:', data.highScore)
+      } else {
+        console.error('High score fetch failed:', data)
       }
     } catch (error) {
       console.error('Error fetching high score:', error)
@@ -150,6 +183,7 @@ export default function PlaneGame() {
    */
   const updateHighScore = useCallback(async (newScore: number) => {
     try {
+      console.log('=== Updating high score:', newScore)
       const response = await fetch('/api/highscore', {
         method: 'POST',
         headers: {
@@ -157,10 +191,15 @@ export default function PlaneGame() {
         },
         body: JSON.stringify({ score: newScore })
       })
+      console.log('Update response status:', response.status)
       const data = await response.json()
+      console.log('Update high score response:', data)
       if (data.success) {
         setHighScore(data.highScore)
         setIsNewRecord(data.isNewRecord)
+        console.log('New high score:', data.highScore, 'Is new record:', data.isNewRecord)
+      } else {
+        console.error('Update high score failed:', data)
       }
     } catch (error) {
       console.error('Error updating high score:', error)
@@ -192,6 +231,7 @@ export default function PlaneGame() {
     setScore(0)
     setHealth(100)
     setIsNewRecord(false)
+    setTouchControls({ up: false, down: false, left: false, right: false })
   }, [])
 
   /**
@@ -332,17 +372,17 @@ export default function PlaneGame() {
     // 只在游戏进行时更新游戏对象
     if (gameState !== 'playing') return
 
-    // 更新玩家位置（基于键盘输入）
-    if (keysRef.current['ArrowLeft'] || keysRef.current['KeyA']) {
+    // 更新玩家位置（基于键盘输入和虚拟方向键）
+    if (keysRef.current['ArrowLeft'] || keysRef.current['KeyA'] || touchControls.left) {
       player.x = Math.max(0, player.x - player.speed)
     }
-    if (keysRef.current['ArrowRight'] || keysRef.current['KeyD']) {
+    if (keysRef.current['ArrowRight'] || keysRef.current['KeyD'] || touchControls.right) {
       player.x = Math.min(CANVAS_WIDTH - player.width, player.x + player.speed)
     }
-    if (keysRef.current['ArrowUp'] || keysRef.current['KeyW']) {
+    if (keysRef.current['ArrowUp'] || keysRef.current['KeyW'] || touchControls.up) {
       player.y = Math.max(0, player.y - player.speed)
     }
-    if (keysRef.current['ArrowDown'] || keysRef.current['KeyS']) {
+    if (keysRef.current['ArrowDown'] || keysRef.current['KeyS'] || touchControls.down) {
       player.y = Math.min(CANVAS_HEIGHT - player.height, player.y + player.speed)
     }
 
@@ -558,7 +598,7 @@ export default function PlaneGame() {
       setGameState('gameover')
       updateHighScore(score) // 保存最高分
     }
-  }, [gameState, score, health, shootBullet, spawnEnemy, spawnPowerUp, updateHighScore])
+  }, [gameState, score, health, shootBullet, spawnEnemy, spawnPowerUp, updateHighScore, touchControls])
 
   /**
    * 游戏循环
@@ -589,8 +629,9 @@ export default function PlaneGame() {
     }
   }, [gameLoop])
 
-  // 组件加载时获取最高分
+  // 组件加载时获取最高分（确保只执行一次）
   useEffect(() => {
+    console.log('=== Component mounted, fetching high score ===')
     fetchHighScore()
   }, [fetchHighScore])
 
@@ -623,7 +664,7 @@ export default function PlaneGame() {
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-bold text-white">飞机大战</CardTitle>
           <CardDescription className="text-slate-400">
-            使用 WASD 或方向键控制战机 | 自动发射子弹 | 收集道具增强能力
+            {isMobile ? '点击虚拟方向键控制战机' : '使用 WASD 或方向键控制战机'} | 自动发射子弹 | 收集道具增强能力
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center gap-4">
@@ -640,25 +681,55 @@ export default function PlaneGame() {
             </div>
           </div>
 
-          {/* 游戏画布容器 */}
+          {/* 游戏界面和覆盖层 */}
           <div className="relative">
             <canvas
               ref={canvasRef}
               className="rounded-lg border-2 border-slate-600 shadow-2xl"
+              style={{ maxWidth: '100%', height: 'auto' }}
             />
 
-            {/* 开始界面 */}
-            {gameState === 'start' && (
+            {/* 主菜单界面 */}
+            {gameState === 'menu' && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 rounded-lg">
-                <h2 className="text-4xl font-bold text-white mb-4">飞机大战</h2>
-                <p className="text-slate-300 mb-2">使用 WASD 或方向键控制战机</p>
+                <h2 className="text-4xl font-bold text-white mb-8">飞机大战</h2>
+                <p className="text-slate-300 mb-2">{isMobile ? '点击虚拟方向键控制战机' : '使用 WASD 或方向键控制战机'}</p>
                 <p className="text-slate-300 mb-2">自动发射子弹攻击敌机</p>
-                <p className="text-slate-300 mb-2">收集道具增强战斗力</p>
+                <p className="text-slate-300 mb-6">收集道具增强战斗力</p>
                 <p className="text-purple-400 text-xl font-semibold mb-6">
                   历史最高分: {highScore}
                 </p>
-                <Button onClick={startGame} className="text-lg px-8 py-6">
-                  开始游戏
+                <div className="flex flex-col gap-3 w-full px-8">
+                  <Button onClick={startGame} className="text-lg px-8 py-6">
+                    开始游戏
+                  </Button>
+                  <Button onClick={() => {
+                    fetchHighScore()
+                    setGameState('history')
+                  }} variant="outline" className="text-lg px-8 py-6">
+                    查看历史记录
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* 历史记录界面 */}
+            {gameState === 'history' && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 rounded-lg">
+                <h2 className="text-4xl font-bold text-white mb-8">🏆 历史记录</h2>
+                <div className="bg-slate-800/50 rounded-lg p-6 mb-8 w-full max-w-md">
+                  <div className="flex justify-between items-center mb-4">
+                    <span className="text-white text-xl">历史最高分</span>
+                    <span className="text-yellow-400 text-4xl font-bold">{highScore}</span>
+                  </div>
+                  <div className="text-slate-300 text-sm mb-6">
+                    <p className="mb-2">🎮 这是您的历史最高分</p>
+                    <p className="mb-2">📊 继续努力，打破纪录！</p>
+                    <p>🎯 查看历史详细记录功能开发中...</p>
+                  </div>
+                </div>
+                <Button onClick={() => setGameState('menu')} className="text-lg px-8 py-6">
+                  返回主菜单
                 </Button>
               </div>
             )}
@@ -678,12 +749,101 @@ export default function PlaneGame() {
                 <p className="text-purple-400 text-lg mb-6">
                   历史最高分: {highScore}
                 </p>
-                <Button onClick={startGame} className="text-lg px-8 py-6">
-                  再玩一次
-                </Button>
+                <div className="flex flex-col gap-3 w-full px-8">
+                  <Button onClick={() => setGameState('menu')} variant="outline" className="text-lg px-8 py-6">
+                    返回主菜单
+                  </Button>
+                  <Button onClick={startGame} className="text-lg px-8 py-6">
+                    再玩一次
+                  </Button>
+                </div>
               </div>
             )}
           </div>
+
+          {/* 移动端虚拟方向键 - 放在游戏界面下方 */}
+          {isMobile && (
+            <div className="w-full mt-4 px-2">
+              <div className="relative bg-slate-800/30 rounded-2xl p-4">
+                {/* 上方向键 */}
+                <div className="flex justify-center mb-2">
+                  <button
+                    onTouchStart={(e) => {
+                      e.preventDefault()
+                      setTouchControls(prev => ({ ...prev, up: true }))
+                    }}
+                    onTouchEnd={() => {
+                      setTouchControls(prev => ({ ...prev, up: false }))
+                    }}
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                    className="w-20 h-20 bg-blue-500/80 hover:bg-blue-500/100 active:bg-blue-500 rounded-full flex items-center justify-center touch-manipulation"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 4l-8 8h16l-8-8z" />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* 左右方向键 */}
+                <div className="flex justify-between items-center mb-2">
+                  <button
+                    onTouchStart={(e) => {
+                      e.preventDefault()
+                      setTouchControls(prev => ({ ...prev, left: true }))
+                    }}
+                    onTouchEnd={() => {
+                      setTouchControls(prev => ({ ...prev, left: false }))
+                    }}
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                    className="w-20 h-20 bg-blue-500/80 hover:bg-blue-500/100 active:bg-blue-500 rounded-full flex items-center justify-center touch-manipulation"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M4 12l8-8v16l-8 8z" />
+                    </svg>
+                  </button>
+                  <button
+                    onTouchStart={(e) => {
+                      e.preventDefault()
+                      setTouchControls(prev => ({ ...prev, right: true }))
+                    }}
+                    onTouchEnd={() => {
+                      setTouchControls(prev => ({ ...prev, right: false }))
+                    }}
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                    className="w-20 h-20 bg-blue-500/80 hover:bg-blue-500/100 active:bg-blue-500 rounded-full flex items-center justify-center touch-manipulation"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M20 12l-8-8v16l8 8z" />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* 下方向键 */}
+                <div className="flex justify-center">
+                  <button
+                    onTouchStart={(e) => {
+                      e.preventDefault()
+                      setTouchControls(prev => ({ ...prev, down: true }))
+                    }}
+                    onTouchEnd={() => {
+                      setTouchControls(prev => ({ ...prev, down: false }))
+                    }}
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                    className="w-20 h-20 bg-blue-500/80 hover:bg-blue-500/100 active:bg-blue-500 rounded-full flex items-center justify-center touch-manipulation"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 20l-8-8H4l8 8z" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* 操作提示 */}
+              <p className="text-center text-slate-400 text-sm mt-2">
+                长按可持续移动 · 支持多点触控
+              </p>
+            </div>
+          )}
 
           {/* 道具说明图例 */}
           {gameState === 'playing' && (

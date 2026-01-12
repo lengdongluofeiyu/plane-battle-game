@@ -1,3 +1,11 @@
+项目介绍在PROJECT_TECH.md
+
+大模型的工作流在worklog.md
+
+下面的README文件为z.ai自行创建
+
+---
+
 # 🚀 Welcome to Z.ai Code Scaffold
 
 A modern, production-ready web application scaffold powered by cutting-edge technologies, designed to accelerate your development with [Z.ai](https://chat.z.ai)'s AI-powered coding assistance.
